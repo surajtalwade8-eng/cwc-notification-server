@@ -4,8 +4,7 @@ const app = express();
 app.use(express.json());
 
 // Service Account
-const serviceAccount = require('./serviceAccountKey.json');
-
+const serviceAccount = JSON.parse(process.env.SERVICE_ACCOUNT);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://tech-b30b8-default-rtdb.asia-southeast1.firebasedatabase.app/"
