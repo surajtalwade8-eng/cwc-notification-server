@@ -3,8 +3,8 @@ const admin = require('firebase-admin');
 const app = express();
 app.use(express.json());
 
-// Service Account
 const serviceAccount = JSON.parse(process.env.SERVICE_ACCOUNT);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://tech-b30b8-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -12,19 +12,29 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// ✅ Test endpoint
+// Test endpoint
 app.get('/', (req, res) => {
   res.send('CWC Notification Server Running! ✅');
 });
 
-// ✅ Manual test notification
+// Manual test
 app.get('/send-notification', async (req, res) => {
   const { token, title, body } = req.query;
   if(!token) return res.send("❌ Token missing!");
   try {
     await admin.messaging().send({
       token: token,
-      notification: { title: title || "CWC Test", body: body || "Test notification!" }
+      notification: { title: title || "CWC Test", body: body || "Test!" },
+      webpush: {
+        notification: {
+          icon: "https://surajtalwade8-eng.github.io/technician-system/icon-192.png",
+          requireInteraction: true,
+          vibrate: [500,200,500]
+        },
+        fcmOptions: {
+          link: "https://surajtalwade8-eng.github.io/technician-system/technician-app.html"
+        }
+      }
     });
     res.send("✅ Notification Sent!");
   } catch(e) {
@@ -32,47 +42,52 @@ app.get('/send-notification', async (req, res) => {
   }
 });
 
-// ✅ Auto notification jab naya case aaye
-db.ref("cases").on("child_changed", async (snap) => {
-  const c = snap.val();
-  if(c.status !== "New") return;
-  try {
-    const techSnap = await db.ref("technicians/" + c.techKey).once("value");
+// ✅ Naya case notification
+async function sendNotification(techKey, title, body){
+  try{
+    const techSnap = await db.ref("technicians/"+techKey).once("value");
     const tech = techSnap.val();
-    if(!tech?.fcmToken) return console.log("No FCM token for:", c.techKey);
+    if(!tech?.fcmToken) return console.log("No token:", techKey);
     await admin.messaging().send({
       token: tech.fcmToken,
-      notification: {
-        title: "🔔 New Case - " + c.customer,
-        body: c.address + " | " + c.problem
-      },
-      data: { caseId: c.id, techKey: c.techKey }
+      notification: { title: title, body: body },
+      webpush: {
+        notification: {
+          title: title,
+          body: body,
+          icon: "https://surajtalwade8-eng.github.io/technician-system/icon-192.png",
+          requireInteraction: true,
+          vibrate: [500,200,500]
+        },
+        fcmOptions: {
+          link: "https://surajtalwade8-eng.github.io/technician-system/technician-app.html"
+        }
+      }
     });
-    console.log("✅ Notification sent to:", tech.name);
-  } catch(e) {
-    console.log("❌ FCM Error:", e.message);
+    console.log("✅ Sent to:", tech.name);
+  }catch(e){
+    console.log("❌ Error:", e.message);
   }
-});
+}
 
-// ✅ Naya case assign hone pe bhi trigger
 db.ref("cases").on("child_added", async (snap) => {
   const c = snap.val();
   if(c.status !== "New") return;
-  try {
-    const techSnap = await db.ref("technicians/" + c.techKey).once("value");
-    const tech = techSnap.val();
-    if(!tech?.fcmToken) return;
-    await admin.messaging().send({
-      token: tech.fcmToken,
-      notification: {
-        title: "🔔 New Case - " + c.customer,
-        body: c.address + " | " + c.problem
-      }
-    });
-    console.log("✅ New case notification sent:", c.id);
-  } catch(e) {
-    console.log("❌ Error:", e.message);
-  }
+  await sendNotification(
+    c.techKey,
+    "🔔 New Case - " + c.customer,
+    c.address + " | " + c.problem
+  );
 });
 
-app.listen(3000, () => console.log('Server running on port 3000'));
+db.ref("cases").on("child_changed", async (snap) => {
+  const c = snap.val();
+  if(c.status !== "New") return;
+  await sendNotification(
+    c.techKey,
+    "🔔 New Case - " + c.customer,
+    c.address + " | " + c.problem
+  );
+});
+
+app.listen(3000, () => console.log('✅ Server running on port 3000'));
